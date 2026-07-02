@@ -1,0 +1,13 @@
+{
+  "name": "hospitia-gemini-relay",
+  "version": "1.0.0",
+  "description": "Relay WebSocket entre la web de HOSPITIA AI y Gemini Live (Vertex AI)",
+  "type": "module",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "@google/genai": "^1.9.0",
+    "ws": "^8.18.0"
+  }
+}
