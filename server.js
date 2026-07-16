@@ -1,7 +1,9 @@
 /**
  * ============================================================================
- * HOSPITIA AI - Relay Gemini Live (via Vertex AI) - v1.2
+ * HOSPITIA AI - Relay Gemini Live (via Vertex AI) - v1.3
  * Puente WebSocket entre la web y Gemini Live. Voces rotativas + demo optimizada.
+ * v1.3: el bot saluda primero (fiable), compresion de contexto (no se corta),
+ *       colgar por voz, respuestas cortas.
  * ============================================================================
  */
 import fs from 'node:fs';
@@ -21,8 +23,6 @@ const MODEL     = process.env.GEMINI_MODEL || 'gemini-live-2.5-flash-native-audi
 const N8N_URL   = process.env.N8N_AGENDAR_URL || '';
 const ALLOWED   = (process.env.ALLOWED_ORIGIN || 'https://hospitia.es').split(',').map(s=>s.trim());
 
-// Voces rotativas: cada llamada suena distinta (mezcla hombre/mujer).
-// (Voces de Gemini native audio.)
 const VOICES = ['Puck','Charon','Fenrir','Orus','Kore','Aoede','Leda','Zephyr'];
 
 const SYSTEM_INSTRUCTION = [
@@ -30,7 +30,11 @@ const SYSTEM_INSTRUCTION = [
 
   'QUIEN ERES: eres HOSPITIA AI, el bot de voz con IA que la empresa HOSPITIA AI instala en negocios locales para atenderles las llamadas 24 horas. ATENCION: esto es una DEMOSTRACION EN DIRECTO. Quien te escucha es un posible cliente (el dueno de un negocio) que esta en la web hospitia.es probando como sonaria y funcionaria el bot en SU establecimiento. No es una llamada real: eres una demo que se vende a si misma.',
 
-  'SALUDO INICIAL: arranca con algo asi (con tus palabras, natural): "Hola, buenas... mira, esto es una demostracion de HOSPITIA AI, para que veas en directo como te atenderia el bot las llamadas de tu negocio. No es una llamada de verdad, es una prueba. Cuentame, eh... a que te dedicas?"',
+  'TU HABLAS PRIMERO (MUY IMPORTANTE): en cuanto empieza la llamada, saluda TU inmediatamente sin esperar a que el visitante diga nada. Arranca con algo asi (con tus palabras, natural): "Hola, buenas. Mira, esto es una demo de HOSPITIA AI para que veas en directo como te cogeria las llamadas del negocio... no es una llamada de verdad, es una prueba. Cuentame, a que te dedicas?" Nunca te quedes en silencio esperando: el primero en hablar SIEMPRE eres tu.',
+
+  'RESPUESTAS CORTAS: contesta breve, dos o tres frases como mucho, y devuelve la palabra al visitante. Nada de monologos largos ni parrafadas. Si hay mucho que contar, da lo esencial y pregunta si quiere que profundices. Ir al grano tambien hace que la llamada vaya fluida.',
+
+  'COLGAR CUANDO LO PIDAN: si el visitante dice que quiere colgar, terminar, dejarlo, que ya esta bien, o se despide (adios, hasta luego, gracias y ya esta), despidete en UNA frase corta y acto seguido llama a la herramienta finalizar_llamada para colgar de verdad. No sigas hablando ni intentes retenerle.',
 
   'REGLA DE ORO - ES UNA DEMO, NO HAGAS ACCIONES REALES: si te piden reservar mesa, pedir cita, hacer un pedido, etc., NO digas "perfecto, reservado" ni "hecho". En vez de eso, DEMUESTRA lo que haria el bot de verdad en su negocio: "Mira, en tu caso yo cogeria esta reserva, la meteria sola en tu calendario y te mandaria la confirmacion por mensaje al momento. Aqui es solo la demo, pero... ves que rapido? asi no se te escapa ni una llamada." Siempre reconduce a ensenar la capacidad, nunca ejecutes la accion.',
 
@@ -62,6 +66,12 @@ const AGENDAR_DECL = {
   }, required:['nombre','sector','telefono'] }
 };
 
+const FINALIZAR_DECL = {
+  name: 'finalizar_llamada',
+  description: 'Cuelga la llamada. Usar cuando el visitante pida terminar, colgar, dejarlo o se despida. Despidete en una frase corta ANTES de llamarla.',
+  parameters: { type: 'OBJECT', properties: { motivo:{type:'STRING'} } }
+};
+
 if (!PROJECT) { console.error('Falta GCP_PROJECT'); process.exit(1); }
 const ai = new GoogleGenAI({ vertexai: true, project: PROJECT, location: LOCATION });
 
@@ -81,13 +91,14 @@ wss.on('connection', async (browser, req) => {
         responseModalities: [Modality.AUDIO],
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
         systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-        tools: [{ functionDeclarations: [ AGENDAR_DECL ] }],
-        realtimeInputConfig: { automaticActivityDetection: { silenceDurationMs: 800, prefixPaddingMs: 300 } }
+        tools: [{ functionDeclarations: [ AGENDAR_DECL, FINALIZAR_DECL ] }],
+        realtimeInputConfig: { automaticActivityDetection: { silenceDurationMs: 800, prefixPaddingMs: 300 } },
+        contextWindowCompression: { slidingWindow: {} }
       },
       callbacks: {
         onopen: () => {
           safeSend(browser, { type: 'ready' });
-          try { session.sendClientContent({ turns: [{ role:'user', parts:[{ text:'(el visitante acaba de conectar) Saluda como en el saludo inicial y preguntale a que se dedica su negocio.' }] }], turnComplete: true }); } catch(e){}
+          try { session.sendClientContent({ turns: [{ role:'user', parts:[{ text:'(SISTEMA: el visitante acaba de conectar y esta en silencio) Saluda TU ahora mismo, sin esperar, con el saludo inicial de demo y preguntale a que se dedica su negocio.' }] }], turnComplete: true }); } catch(e){}
         },
         onmessage: (msg) => handleGemini(msg, browser, session),
         onerror: (e) => { console.error('Gemini error:', e?.message||e); safeSend(browser, { type:'error', message:String(e?.message||e) }); },
@@ -111,7 +122,7 @@ wss.on('connection', async (browser, req) => {
 
 function handleGemini(msg, browser, session) {
   try {
-    if (msg.toolCall) { handleTool(msg.toolCall, session); return; }
+    if (msg.toolCall) { handleTool(msg.toolCall, session, browser); return; }
     const sc = msg.serverContent;
     if (!sc) return;
     if (sc.interrupted) safeSend(browser, { type:'interrupted' });
@@ -121,7 +132,7 @@ function handleGemini(msg, browser, session) {
   } catch(e){ console.error('handleGemini', e); }
 }
 
-async function handleTool(toolCall, session) {
+async function handleTool(toolCall, session, browser) {
   const responses = [];
   for (const fc of (toolCall.functionCalls || [])) {
     let result = { exito:false, mensaje:'no configurado' };
@@ -130,6 +141,9 @@ async function handleTool(toolCall, session) {
         const r = await fetch(N8N_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(fc.args||{}) });
         result = r.ok ? { exito:true, mensaje:'agendado' } : { exito:false, mensaje:'error n8n' };
       } catch(e){ result = { exito:false, mensaje:'error conexion' }; }
+    } else if (fc.name === 'finalizar_llamada') {
+      result = { exito:true, mensaje:'colgando' };
+      safeSend(browser, { type:'endCall' });
     }
     responses.push({ id: fc.id, name: fc.name, response: { result } });
   }
@@ -138,4 +152,4 @@ async function handleTool(toolCall, session) {
 
 function safeSend(ws, obj) { try { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); } catch(e){} }
 
-httpServer.listen(PORT, () => console.log('HOSPITIA AI relay v1.2 escuchando en puerto', PORT, '| modelo', MODEL, '| voces rotativas'));
+httpServer.listen(PORT, () => console.log('HOSPITIA AI relay v1.3 escuchando en puerto', PORT, '| modelo', MODEL, '| voces rotativas | bot saluda primero | contexto comprimido'));
