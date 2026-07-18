@@ -1,9 +1,9 @@
 /**
  * ============================================================================
- * HOSPITIA AI - Relay Gemini Live (via Vertex AI) - v1.3
+ * HOSPITIA AI - Relay Gemini Live (via Vertex AI) - v1.4 (diagnostico)
  * Puente WebSocket entre la web y Gemini Live. Voces rotativas + demo optimizada.
- * v1.3: el bot saluda primero (fiable), compresion de contexto (no se corta),
- *       colgar por voz, respuestas cortas.
+ * v1.4: logging detallado del ciclo de vida de la sesion Gemini (open/close/error)
+ *       + timeout de apertura, para diagnosticar caidas silenciosas.
  * ============================================================================
  */
 import fs from 'node:fs';
@@ -82,8 +82,15 @@ wss.on('connection', async (browser, req) => {
   const origin = req.headers.origin || '';
   if (ALLOWED[0] !== '*' && origin && !ALLOWED.includes(origin)) { browser.close(); return; }
   const voice = VOICES[Math.floor(Math.random()*VOICES.length)];
-  console.log('Nueva conexion navegador. Voz:', voice, '- Abriendo Gemini...');
+  console.log(`[${new Date().toISOString()}] Nueva conexion navegador. Voz: ${voice} | modelo=${MODEL} | loc=${LOCATION} | proj=${PROJECT ? 'set' : 'MISSING'} | Abriendo Gemini...`);
   let session = null;
+  let opened = false;
+  const openTimer = setTimeout(() => {
+    if (!opened) {
+      console.error(`[DIAG] TIMEOUT: Gemini no llamo a onopen en 12s (modelo=${MODEL}). La conexion a Vertex se ha quedado colgada.`);
+      safeSend(browser, { type:'error', message:'timeout abriendo Gemini (12s)' });
+    }
+  }, 12000);
   try {
     session = await ai.live.connect({
       model: MODEL,
@@ -97,16 +104,30 @@ wss.on('connection', async (browser, req) => {
       },
       callbacks: {
         onopen: () => {
+          opened = true; clearTimeout(openTimer);
+          console.log(`[DIAG] ✅ Gemini ABIERTO (voz ${voice}). Enviando saludo inicial.`);
           safeSend(browser, { type: 'ready' });
-          try { session.sendClientContent({ turns: [{ role:'user', parts:[{ text:'(SISTEMA: el visitante acaba de conectar y esta en silencio) Saluda TU ahora mismo, sin esperar, con el saludo inicial de demo y preguntale a que se dedica su negocio.' }] }], turnComplete: true }); } catch(e){}
+          try { session.sendClientContent({ turns: [{ role:'user', parts:[{ text:'(SISTEMA: el visitante acaba de conectar y esta en silencio) Saluda TU ahora mismo, sin esperar, con el saludo inicial de demo y preguntale a que se dedica su negocio.' }] }], turnComplete: true }); } catch(e){ console.error('[DIAG] error enviando saludo:', e?.message||e); }
         },
         onmessage: (msg) => handleGemini(msg, browser, session),
-        onerror: (e) => { console.error('Gemini error:', e?.message||e); safeSend(browser, { type:'error', message:String(e?.message||e) }); },
-        onclose: () => { try{ browser.close(); }catch(e){} }
+        onerror: (e) => {
+          clearTimeout(openTimer);
+          console.error(`[DIAG] ❌ Gemini ERROR: message=${e?.message||e} | code=${e?.code||'?'} | status=${e?.status||'?'}`);
+          safeSend(browser, { type:'error', message:String(e?.message||e) });
+        },
+        onclose: (e) => {
+          clearTimeout(openTimer);
+          console.error(`[DIAG] 🔌 Gemini CERRO. abierto_antes=${opened} | code=${e?.code||'?'} | reason=${JSON.stringify(e?.reason||'')}`);
+          if (!opened) safeSend(browser, { type:'error', message:`Gemini cerro sin abrir (code ${e?.code||'?'}: ${e?.reason||''})` });
+          try{ browser.close(); }catch(_){}
+        }
       }
     });
+    console.log(`[DIAG] ai.live.connect() resolvio (session creada). Esperando onopen...`);
   } catch (e) {
-    console.error('No se pudo abrir Gemini:', e?.message||e);
+    clearTimeout(openTimer);
+    console.error(`[DIAG] ❌ No se pudo abrir Gemini (throw): message=${e?.message||e} | code=${e?.code||'?'} | status=${e?.status||'?'}`);
+    console.error('[DIAG] stack:', e?.stack || '(sin stack)');
     safeSend(browser, { type:'error', message:String(e?.message||e) });
     try { browser.close(); } catch(_){}
     return;
@@ -152,4 +173,4 @@ async function handleTool(toolCall, session, browser) {
 
 function safeSend(ws, obj) { try { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); } catch(e){} }
 
-httpServer.listen(PORT, () => console.log('HOSPITIA AI relay v1.3 escuchando en puerto', PORT, '| modelo', MODEL, '| voces rotativas | bot saluda primero | contexto comprimido'));
+httpServer.listen(PORT, () => console.log('HOSPITIA AI relay v1.4 (diagnostico) escuchando en puerto', PORT, '| modelo', MODEL, '| loc', LOCATION));
