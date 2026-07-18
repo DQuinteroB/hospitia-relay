@@ -1,9 +1,10 @@
 /**
  * ============================================================================
- * HOSPITIA AI - Relay Gemini Live (via Vertex AI) - v1.4 (diagnostico)
+ * HOSPITIA AI - Relay Gemini Live (via Vertex AI) - v1.5 (fix saludo)
  * Puente WebSocket entre la web y Gemini Live. Voces rotativas + demo optimizada.
- * v1.4: logging detallado del ciclo de vida de la sesion Gemini (open/close/error)
- *       + timeout de apertura, para diagnosticar caidas silenciosas.
+ * v1.5: FIX del bug 'session null en onopen' (la lib nueva dispara onopen antes
+ *       de resolver connect). El saludo se envia tras asignar session -> el bot habla.
+ *       Mantiene logging de diagnostico open/close/error.
  * ============================================================================
  */
 import fs from 'node:fs';
@@ -105,9 +106,8 @@ wss.on('connection', async (browser, req) => {
       callbacks: {
         onopen: () => {
           opened = true; clearTimeout(openTimer);
-          console.log(`[DIAG] ✅ Gemini ABIERTO (voz ${voice}). Enviando saludo inicial.`);
+          console.log(`[DIAG] ✅ Gemini ABIERTO (voz ${voice}).`);
           safeSend(browser, { type: 'ready' });
-          try { session.sendClientContent({ turns: [{ role:'user', parts:[{ text:'(SISTEMA: el visitante acaba de conectar y esta en silencio) Saluda TU ahora mismo, sin esperar, con el saludo inicial de demo y preguntale a que se dedica su negocio.' }] }], turnComplete: true }); } catch(e){ console.error('[DIAG] error enviando saludo:', e?.message||e); }
         },
         onmessage: (msg) => handleGemini(msg, browser, session),
         onerror: (e) => {
@@ -123,7 +123,11 @@ wss.on('connection', async (browser, req) => {
         }
       }
     });
-    console.log(`[DIAG] ai.live.connect() resolvio (session creada). Esperando onopen...`);
+    console.log(`[DIAG] ai.live.connect() resolvio (session creada). Enviando saludo inicial...`);
+    try {
+      session.sendClientContent({ turns: [{ role:'user', parts:[{ text:'(SISTEMA: el visitante acaba de conectar y esta en silencio) Saluda TU ahora mismo, sin esperar, con el saludo inicial de demo y preguntale a que se dedica su negocio.' }] }], turnComplete: true });
+      console.log('[DIAG] saludo inicial enviado OK.');
+    } catch(e){ console.error('[DIAG] error enviando saludo:', e?.message||e); }
   } catch (e) {
     clearTimeout(openTimer);
     console.error(`[DIAG] ❌ No se pudo abrir Gemini (throw): message=${e?.message||e} | code=${e?.code||'?'} | status=${e?.status||'?'}`);
@@ -173,4 +177,4 @@ async function handleTool(toolCall, session, browser) {
 
 function safeSend(ws, obj) { try { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); } catch(e){} }
 
-httpServer.listen(PORT, () => console.log('HOSPITIA AI relay v1.4 (diagnostico) escuchando en puerto', PORT, '| modelo', MODEL, '| loc', LOCATION));
+httpServer.listen(PORT, () => console.log('HOSPITIA AI relay v1.5 (fix saludo) escuchando en puerto', PORT, '| modelo', MODEL, '| loc', LOCATION));
