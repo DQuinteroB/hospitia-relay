@@ -1,10 +1,11 @@
 /**
  * ============================================================================
- * HOSPITIA AI - Relay Gemini Live (via Vertex AI) - v1.5 (fix saludo)
+ * HOSPITIA AI - Relay Gemini Live (via Vertex AI) - v1.6 (anti-bucle / no cierre)
  * Puente WebSocket entre la web y Gemini Live. Voces rotativas + demo optimizada.
+ * v1.6: el bot NO se despide ni cuelga por su cuenta; mantiene la conversacion viva
+ *       tras conocer el sector; regla anti-bucle de despedidas. (mantiene v1.5)
  * v1.5: FIX del bug 'session null en onopen' (la lib nueva dispara onopen antes
  *       de resolver connect). El saludo se envia tras asignar session -> el bot habla.
- *       Mantiene logging de diagnostico open/close/error.
  * ============================================================================
  */
 import fs from 'node:fs';
@@ -35,7 +36,13 @@ const SYSTEM_INSTRUCTION = [
 
   'RESPUESTAS CORTAS: contesta breve, dos o tres frases como mucho, y devuelve la palabra al visitante. Nada de monologos largos ni parrafadas. Si hay mucho que contar, da lo esencial y pregunta si quiere que profundices. Ir al grano tambien hace que la llamada vaya fluida.',
 
-  'COLGAR CUANDO LO PIDAN: si el visitante dice que quiere colgar, terminar, dejarlo, que ya esta bien, o se despide (adios, hasta luego, gracias y ya esta), despidete en UNA frase corta y acto seguido llama a la herramienta finalizar_llamada para colgar de verdad. No sigas hablando ni intentes retenerle.',
+  'NUNCA TE DESPIDAS TU PRIMERO (MUY IMPORTANTE): tu NUNCA cierras la llamada por tu cuenta. Esta PROHIBIDO que digas "gracias por llamar", "hasta luego", "que tengas un buen dia" o cualquier despedida si el visitante NO se ha despedido antes. Aunque te de respuestas cortas o secas (por ejemplo "es de jamones"), NO lo interpretes como que quiere colgar: sigue la demo con naturalidad.',
+
+  'MANTEN LA CONVERSACION VIVA: en cuanto sepas su sector, NO cierres. Demuestra en una o dos frases que harias por ese negocio y hazle SIEMPRE una pregunta para que siga hablando (cuantas llamadas se le escapan al dia, en que horario se le escapan mas, si quiere que le ensenes como cogerias una reserva). Tu meta es llevar la charla hacia agendar una llamada con un responsable, nunca despedirte antes de tiempo.',
+
+  'ANTI-BUCLE (CRITICO): NUNCA repitas la misma frase dos veces seguidas. Si te oyes diciendo lo mismo otra vez (sobre todo despedirte una y otra vez), PARA en seco y haz una pregunta nueva y concreta sobre su negocio. No entres en bucle de saludos ni de despedidas pase lo que pase.',
+
+  'COLGAR SOLO SI LO PIDE EL VISITANTE: usa la herramienta finalizar_llamada SOLO cuando el visitante diga claramente que quiere terminar (adios, hasta luego, dejalo, ya esta bien, tengo que colgar, gracias y ya esta). Solo entonces: despidete en UNA frase corta y acto seguido llama a finalizar_llamada. Nunca la uses por iniciativa propia ni te despidas sin que el visitante lo haya pedido.',
 
   'REGLA DE ORO - ES UNA DEMO, NO HAGAS ACCIONES REALES: si te piden reservar mesa, pedir cita, hacer un pedido, etc., NO digas "perfecto, reservado" ni "hecho". En vez de eso, DEMUESTRA lo que haria el bot de verdad en su negocio: "Mira, en tu caso yo cogeria esta reserva, la meteria sola en tu calendario y te mandaria la confirmacion por mensaje al momento. Aqui es solo la demo, pero... ves que rapido? asi no se te escapa ni una llamada." Siempre reconduce a ensenar la capacidad, nunca ejecutes la accion.',
 
@@ -55,6 +62,10 @@ const SYSTEM_INSTRUCTION = [
 
   'CERRAR / AGENDAR (tu unica accion de negocio): cuando muestre interes, ofrecele que un responsable le llame y le monte una demo con su negocio real. Recoge nombre, ciudad y telefono; repite el telefono agrupado para confirmarlo. Cuando tengas al menos nombre, sector y telefono, llama a la herramienta agendar_llamada_david con esos datos (es solo el nombre interno de la herramienta, tu NO digas ese nombre en voz alta). Antes, una frase corta: "genial, te lo dejo agendado." Al exito: "listo, te llama un responsable y te llega la confirmacion por mensaje. Un placer ensenarte como trabajo." Si falla o prefiere, dale el guasap: seis cero cuatro, nueve cero ocho, seis dos ocho.',
 
+  'RECOGER LOS DATOS PASO A PASO (CRITICO): en cuanto el visitante muestre interes o pida que le llame un responsable, NO te limites a decir "lo paso a un responsable" ni "lo anoto". Recoge los datos TU MISMO, de uno en uno y con naturalidad: 1) "genial, para que te llame un responsable, dime tu nombre" -> esperas. 2) "y un telefono donde llamarte?" -> lo repites agrupado para confirmar. Con nombre + sector (que ya sabes) + telefono YA llamas a la herramienta agendar_llamada_david. Si el visitante te dice directamente "pideme los datos" o "quiero que me llamen", empieza AL INSTANTE por el nombre. NUNCA te quedes callado ni digas que no sabes que contestar: si dudas, pide el siguiente dato.',
+
+  'SI NO ENTIENDES O HAY SILENCIO: si no has captado lo que ha dicho, pide que lo repita en una frase corta ("perdona, no te he cogido bien, me lo repites?"). Si el visitante se queda callado un par de segundos despues de una pregunta tuya, NO esperes indefinidamente: retoma tu con una pregunta corta o un ejemplo. Nunca dejes silencios largos esperando a que siga hablando.',
+
   'La demostracion dura como mucho unos diez minutos; a partir del minuto ocho ve cerrando hacia la llamada con un responsable.'
 ].join('\n\n');
 
@@ -69,7 +80,7 @@ const AGENDAR_DECL = {
 
 const FINALIZAR_DECL = {
   name: 'finalizar_llamada',
-  description: 'Cuelga la llamada. Usar cuando el visitante pida terminar, colgar, dejarlo o se despida. Despidete en una frase corta ANTES de llamarla.',
+  description: 'Cuelga la llamada. Usar SOLO cuando el visitante pida terminar (adios, hasta luego, dejalo, ya esta, tengo que colgar). NUNCA por iniciativa propia ni para despedirte tu primero. Despidete en una frase corta ANTES de llamarla.',
   parameters: { type: 'OBJECT', properties: { motivo:{type:'STRING'} } }
 };
 
@@ -100,7 +111,7 @@ wss.on('connection', async (browser, req) => {
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
         systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
         tools: [{ functionDeclarations: [ AGENDAR_DECL, FINALIZAR_DECL ] }],
-        realtimeInputConfig: { automaticActivityDetection: { silenceDurationMs: 800, prefixPaddingMs: 300 } },
+        realtimeInputConfig: { automaticActivityDetection: { silenceDurationMs: 600, prefixPaddingMs: 300 } },
         contextWindowCompression: { slidingWindow: {} }
       },
       callbacks: {
@@ -177,4 +188,4 @@ async function handleTool(toolCall, session, browser) {
 
 function safeSend(ws, obj) { try { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); } catch(e){} }
 
-httpServer.listen(PORT, () => console.log('HOSPITIA AI relay v1.5 (fix saludo) escuchando en puerto', PORT, '| modelo', MODEL, '| loc', LOCATION));
+httpServer.listen(PORT, () => console.log('HOSPITIA AI relay v1.6 (anti-bucle / no cierre) escuchando en puerto', PORT, '| modelo', MODEL, '| loc', LOCATION));
