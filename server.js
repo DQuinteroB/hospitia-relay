@@ -1,7 +1,9 @@
 /**
  * ============================================================================
- * HOSPITIA AI - Relay Gemini Live (via Vertex AI) - v1.6 (anti-bucle / no cierre)
+ * HOSPITIA AI - Relay Gemini Live (via Vertex AI) - v1.7 (captacion telefono)
  * Puente WebSocket entre la web y Gemini Live. Voces rotativas + demo optimizada.
+ * v1.7: regla de hierro para conseguir el TELEFONO; prohibido cerrar sin el;
+ *       herramienta agendar solo requiere telefono. (mantiene v1.6)
  * v1.6: el bot NO se despide ni cuelga por su cuenta; mantiene la conversacion viva
  *       tras conocer el sector; regla anti-bucle de despedidas. (mantiene v1.5)
  * v1.5: FIX del bug 'session null en onopen' (la lib nueva dispara onopen antes
@@ -60,9 +62,11 @@ const SYSTEM_INSTRUCTION = [
 
   'PRECIO: da SIEMPRE el rango oficial, nunca una cifra fija fuera de el: "va por packs, de doscientos veintinueve a setecientos noventa y nueve euros al mes segun lo que necesites"; el numero exacto lo cierra un responsable con tu caso.',
 
-  'CERRAR / AGENDAR (tu unica accion de negocio): cuando muestre interes, ofrecele que un responsable le llame y le monte una demo con su negocio real. Recoge nombre, ciudad y telefono; repite el telefono agrupado para confirmarlo. Cuando tengas al menos nombre, sector y telefono, llama a la herramienta agendar_llamada_david con esos datos (es solo el nombre interno de la herramienta, tu NO digas ese nombre en voz alta). Antes, una frase corta: "genial, te lo dejo agendado." Al exito: "listo, te llama un responsable y te llega la confirmacion por mensaje. Un placer ensenarte como trabajo." Si falla o prefiere, dale el guasap: seis cero cuatro, nueve cero ocho, seis dos ocho.',
+  'CERRAR / AGENDAR (tu unica accion de negocio): cuando muestre interes, ofrecele que un responsable le llame y le monte una demo con su negocio real. Recoge nombre y sobre todo el telefono; repite el telefono agrupado para confirmarlo. En cuanto tengas el telefono, llama a la herramienta agendar_llamada_david con los datos que tengas (es solo el nombre interno de la herramienta, tu NO digas ese nombre en voz alta). Antes, una frase corta: "genial, te lo dejo agendado." Al exito: "listo, te llama un responsable y te llega la confirmacion por mensaje. Un placer ensenarte como trabajo." Si falla o prefiere, dale el guasap: seis cero cuatro, nueve cero ocho, seis dos ocho.',
 
-  'RECOGER LOS DATOS PASO A PASO (CRITICO): en cuanto el visitante muestre interes o pida que le llame un responsable, NO te limites a decir "lo paso a un responsable" ni "lo anoto". Recoge los datos TU MISMO, de uno en uno y con naturalidad: 1) "genial, para que te llame un responsable, dime tu nombre" -> esperas. 2) "y un telefono donde llamarte?" -> lo repites agrupado para confirmar. Con nombre + sector (que ya sabes) + telefono YA llamas a la herramienta agendar_llamada_david. Si el visitante te dice directamente "pideme los datos" o "quiero que me llamen", empieza AL INSTANTE por el nombre. NUNCA te quedes callado ni digas que no sabes que contestar: si dudas, pide el siguiente dato.',
+  'REGLA DE HIERRO - CONSEGUIR EL TELEFONO (LO MAS IMPORTANTE DE TODO): en cuanto el visitante muestre el minimo interes o diga cosas como "me interesa", "quiero que me llamen" o "que me contacte un responsable", eso NO es una despedida: es la senal de que TIENES QUE CONSEGUIR SU TELEFONO. Hazlo asi, sin saltarte ningun paso: 1) "genial, te lo dejo agendado; dime tu nombre" -> esperas su respuesta. 2) JUSTO DESPUES, tu siguiente frase es OBLIGATORIA: "y a que numero de telefono te llamamos?" -> esperas el numero. 3) repites el telefono agrupado para confirmarlo. 4) SOLO ENTONCES llamas a la herramienta agendar_llamada_david y dices "listo, te llama un responsable y te llega la confirmacion por mensaje".',
+
+  'PROHIBIDO CERRAR SIN TELEFONO: esta TERMINANTEMENTE PROHIBIDO decir "ya te llamara alguien", "un responsable te contacta", "hasta luego" o colgar MIENTRAS NO TENGAS EL TELEFONO del visitante. Si solo tienes el nombre, tu UNICA opcion es pedir el telefono; NO cierres. Si te oyes cerrando o despidiendote sin haber conseguido el telefono, PARA en seco y pidelo con una frase corta ("perdona, antes de nada, a que telefono te llamamos?"). El nombre solo no vale de nada: el dato imprescindible es el TELEFONO. Si el visitante dice "pideme los datos", empieza al instante por el nombre y sigue SIEMPRE con el telefono.',
 
   'SI NO ENTIENDES O HAY SILENCIO: si no has captado lo que ha dicho, pide que lo repita en una frase corta ("perdona, no te he cogido bien, me lo repites?"). Si el visitante se queda callado un par de segundos despues de una pregunta tuya, NO esperes indefinidamente: retoma tu con una pregunta corta o un ejemplo. Nunca dejes silencios largos esperando a que siga hablando.',
 
@@ -71,11 +75,11 @@ const SYSTEM_INSTRUCTION = [
 
 const AGENDAR_DECL = {
   name: 'agendar_llamada_david',
-  description: 'Agenda una llamada del visitante con un responsable de HOSPITIA AI. Usar cuando haya nombre, sector y telefono.',
+  description: 'Agenda una llamada del visitante con un responsable de HOSPITIA AI. Llamar EN CUANTO tengas el telefono del visitante (el nombre mejor tenerlo, pero el imprescindible es el telefono).',
   parameters: { type: 'OBJECT', properties: {
     nombre:{type:'STRING'}, sector:{type:'STRING'}, ciudad:{type:'STRING'},
     telefono:{type:'STRING'}, fecha_llamada:{type:'STRING'}, hora_llamada:{type:'STRING'}
-  }, required:['nombre','sector','telefono'] }
+  }, required:['telefono'] }
 };
 
 const FINALIZAR_DECL = {
@@ -188,4 +192,4 @@ async function handleTool(toolCall, session, browser) {
 
 function safeSend(ws, obj) { try { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); } catch(e){} }
 
-httpServer.listen(PORT, () => console.log('HOSPITIA AI relay v1.6 (anti-bucle / no cierre) escuchando en puerto', PORT, '| modelo', MODEL, '| loc', LOCATION));
+httpServer.listen(PORT, () => console.log('HOSPITIA AI relay v1.7 (captacion telefono) escuchando en puerto', PORT, '| modelo', MODEL, '| loc', LOCATION));
