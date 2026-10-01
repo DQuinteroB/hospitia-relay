@@ -5,7 +5,8 @@
  * v1.8: aviso de IA en el saludo; servicios y precios alineados con el Master
  *       (sin WhatsApp ni filtro de spam, precios provisionales sin IVA, sin prueba
  *       gratis ni promesas de rentabilidad); informacion y respeto al pedir el
- *       telefono. (mantiene v1.7)
+ *       telefono. Cabecera secreta opcional hacia n8n (N8N_AUTH_HEADER /
+ *       N8N_AUTH_VALUE). (mantiene v1.7)
  * v1.7: regla de hierro para conseguir el TELEFONO; prohibido cerrar sin el;
  *       herramienta agendar solo requiere telefono. (mantiene v1.6)
  * v1.6: el bot NO se despide ni cuelga por su cuenta; mantiene la conversacion viva
@@ -29,6 +30,9 @@ const PROJECT   = process.env.GCP_PROJECT;
 const LOCATION  = process.env.GCP_LOCATION || 'us-central1';
 const MODEL     = process.env.GEMINI_MODEL || 'gemini-live-2.5-flash-native-audio';
 const N8N_URL   = process.env.N8N_AGENDAR_URL || '';
+// Cabecera secreta para el webhook de n8n (Header Auth). Si no se define, se envia sin ella.
+const N8N_AUTH_HEADER = process.env.N8N_AUTH_HEADER || 'X-Hospitia-Token';
+const N8N_AUTH_VALUE  = process.env.N8N_AUTH_VALUE || '';
 const ALLOWED   = (process.env.ALLOWED_ORIGIN || 'https://hospitia.es').split(',').map(s=>s.trim());
 
 const VOICES = ['Puck','Charon','Fenrir','Orus','Kore','Aoede','Leda','Zephyr'];
@@ -184,7 +188,7 @@ async function handleTool(toolCall, session, browser) {
     let result = { exito:false, mensaje:'no configurado' };
     if (fc.name === 'agendar_llamada_david' && N8N_URL) {
       try {
-        const r = await fetch(N8N_URL, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(fc.args||{}) });
+        const r = await fetch(N8N_URL, { method:'POST', headers:{'Content-Type':'application/json', ...(N8N_AUTH_VALUE ? {[N8N_AUTH_HEADER]: N8N_AUTH_VALUE} : {})}, body: JSON.stringify(fc.args||{}) });
         result = r.ok ? { exito:true, mensaje:'agendado' } : { exito:false, mensaje:'error n8n' };
       } catch(e){ result = { exito:false, mensaje:'error conexion' }; }
     } else if (fc.name === 'finalizar_llamada') {
