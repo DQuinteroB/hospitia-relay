@@ -1,0 +1,13 @@
+{
+  "+34XXXXXXXXX": {
+    "nombre": "[NOMBRE DEL NEGOCIO]",
+    "voz": "Kore",
+    "saludo": "Hola, has llamado a [NOMBRE DEL NEGOCIO]. Soy un asistente virtual con inteligencia artificial. Puedo ayudarte con reservas e informacion. Tus datos se usan solo para gestionar tu peticion. Si prefieres hablar con una persona, dimelo y te doy el telefono del local.",
+    "systemInstruction": "[PLANTILLA v7.2 DEL MODULO DE VOZ CON LAS VARIABLES DEL CLIENTE YA RELLENADAS]",
+    "webhooks": {
+      "consultar": "https://n8n.example.com/webhook/[cliente]-disponibilidad",
+      "crear": "https://n8n.example.com/webhook/[cliente]-crear-reserva",
+      "cancelar": "https://n8n.example.com/webhook/[cliente]-cancelar-reserva"
+    }
+  }
+}
