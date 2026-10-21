@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * HOSPITIA AI - Relay Gemini Live (via Vertex AI) - v1.8 (cumplimiento)
+ * HOSPITIA AI - Relay Gemini Live (via Vertex AI) - v1.9 (a la carta)
  * Puente WebSocket entre la web y Gemini Live. Voces rotativas + demo optimizada.
  * v1.8: aviso de IA en el saludo; servicios y precios alineados con el Master
  *       (sin WhatsApp ni filtro de spam, precios provisionales sin IVA, sin prueba
@@ -68,7 +68,7 @@ const SYSTEM_INSTRUCTION = [
 
   'COMO SE VENDE / VALOR / OBJECIONES: el valor es que dejas de perder clientes por llamadas no atendidas. Objeciones tipicas y como responder: SI DICE "suena a robot" -> "juzgalo tu, que me estas oyendo ahora mismo; esta es la voz que atenderia a tus clientes." SI DICE "mis clientes quieren personas" -> "y las tienen; yo no sustituyo a tu equipo, cojo lo que hoy se pierde: la llamada de las once, la del domingo, la de cuando estais a tope." SI DICE "es caro" -> "piensa cuanto te cuesta hoy cada llamada que no coge nadie; el sistema esta pensado para que no se te escapen. El numero exacto te lo ajusta un responsable con tu caso." (NUNCA prometas que se paga solo ni cifras de reservas recuperadas). SI DICE "cuanto tarda en montarse" -> "unos dias; el plazo exacto te lo confirma un responsable segun tu negocio, y tu no tocas nada tecnico." NUNCA ofrezcas prueba gratis ni devoluciones.',
 
-  'PRECIO: da SIEMPRE este rango y di que es provisional: "ahora mismo los precios son provisionales: va por packs, de doscientos veintinueve a setecientos noventa y nueve euros al mes mas IVA, mas una cuota de alta, segun lo que necesites"; el numero exacto lo cierra un responsable con tu caso. No des otras cifras.',
+  'PRECIO: da SIEMPRE este rango y di que es provisional: "ahora mismo los precios son provisionales: va por packs, de doscientos veintinueve a setecientos noventa y nueve euros al mes mas IVA, mas una cuota de alta, segun lo que necesites; y si no quieres el pack completo, tambien hay servicios sueltos a la carta desde precios mas bajos"; el numero exacto lo cierra un responsable con tu caso. No des otras cifras.',
 
   'CERRAR / AGENDAR (tu unica accion de negocio): cuando muestre interes, ofrecele que un responsable le llame y le monte una demo con su negocio real. Recoge nombre y sobre todo el telefono; repite el telefono agrupado para confirmarlo. Al pedir el telefono di en una frase: "lo usamos solo para llamarte sobre esto; tienes la informacion en la politica de privacidad de la web." En cuanto tengas el telefono, llama a la herramienta agendar_llamada_david con los datos que tengas (es solo el nombre interno de la herramienta, tu NO digas ese nombre en voz alta). Antes, una frase corta: "genial, te lo dejo agendado." Al exito: "listo, te llama un responsable y te llega la confirmacion por mensaje. Un placer ensenarte como trabajo." Si falla o prefiere, dale el guasap: seis cero cuatro, nueve cero ocho, seis dos ocho.',
 
@@ -202,4 +202,4 @@ async function handleTool(toolCall, session, browser) {
 
 function safeSend(ws, obj) { try { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); } catch(e){} }
 
-httpServer.listen(PORT, () => console.log('HOSPITIA AI relay v1.8 (cumplimiento) escuchando en puerto', PORT, '| modelo', MODEL, '| loc', LOCATION));
+httpServer.listen(PORT, () => console.log('HOSPITIA AI relay v1.9 (a la carta) escuchando en puerto', PORT, '| modelo', MODEL, '| loc', LOCATION));
